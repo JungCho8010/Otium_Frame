@@ -32,27 +32,17 @@ class PleosVehicleSignalSource(
     override val displayName = "Pleos Vehicle SDK + AAOS"
 
     private val main = Handler(Looper.getMainLooper())
-    private val vehicle = Vehicle(context)
+    private val appContext = context.applicationContext
     private val aaos = AaosDrivingSignals(context, ::publish)
     private var listener: ((VehicleState) -> Unit)? = null
     private var state = VehicleState()
-    private var initialized = false
-    private var gear: PleosGear? = null
+    private var vehicle: Vehicle? = null
     private var evBattery: EvBattery? = null
     private var light: Light? = null
     /** 차량이 앰비언트 색 제어를 지원하는 영역. 없으면 앰비언트는 쓰지 않고 테두리 색으로 대체한다. */
     private var ambientArea: SeatArea? = null
 
-    private val gearListener = object : GearSelectionListener {
-        override fun onSelected(value: VehicleGear?) {
-            publish { it.copy(gear = gearOf(value)) }
-        }
-
-        override fun onFailed(e: Exception) {
-            Log.w(TAG, "기어 구독 실패", e)
-            publish { it.copy(gear = Gear.UNKNOWN) }
-        }
-    }
+    private val gearListener: (VehicleGear?) -> Unit = { value -> publish { it.copy(gear = gearOf(value)) } }
 
     private val socListener = object : EvBatteryStateOfChargeListener {
         override fun onEvBatteryStateOfChargeUpdated(percent: Int?) {
@@ -78,17 +68,12 @@ class PleosVehicleSignalSource(
         this.listener = listener
         aaos.start()
         try {
-            if (!initialized) {
-                vehicle.initialize()
-                initialized = true
-            }
-            gear = vehicle.getGear().also {
-                it.registerGearSelection(gearListener)
-                it.getCurrentGearSelectionState(
-                    { v -> publish { s -> s.copy(gear = gearOf(v)) } },
-                    { e -> Log.w(TAG, "기어 조회 실패", e) },
-                )
-            }
+            val vehicle = Shared.acquire(appContext).also { vehicle = it }
+            Shared.subscribeGear(vehicle, gearListener)
+            vehicle.getGear().getCurrentGearSelectionState(
+                { v -> publish { s -> s.copy(gear = gearOf(v)) } },
+                { e -> Log.w(TAG, "기어 조회 실패", e) },
+            )
             if (!watchOnly) {
                 evBattery = vehicle.getEvBattery().also { it.registerEvBatteryStateOfCharge(socListener) }
                 light = vehicle.getLight().also {
@@ -111,16 +96,13 @@ class PleosVehicleSignalSource(
     override fun stop() {
         listener = null
         main.removeCallbacks(pollCharging)
-        runCatching { gear?.unregisterGearSelection(gearListener) }
         runCatching { evBattery?.unregisterEvBatteryStateOfCharge(socListener) }
-        gear = null
         evBattery = null
         light = null
         aaos.stop()
-        if (initialized) {
-            runCatching { vehicle.release() }
-            initialized = false
-        }
+        Shared.unsubscribeGear(gearListener)
+        vehicle?.let { Shared.release(it) }
+        vehicle = null
     }
 
     override fun setAmbientColor(argb: Int, onResult: (Boolean) -> Unit) {
@@ -154,6 +136,57 @@ class PleosVehicleSignalSource(
         VehicleGear.GEAR_NEUTRAL -> Gear.N
         null, VehicleGear.GEAR_UNKNOWN -> Gear.UNKNOWN
         else -> Gear.D // DRIVE, 1~9단은 모두 주행으로 본다
+    }
+
+    /**
+     * 프로세스에 하나뿐인 SDK 연결·기어 구독.
+     * 화면(FrameActivity)과 백그라운드 서비스(ParkWatchService)가 각자 [Vehicle] 을 만들어 release 하면
+     * SDK 가 앱 단위로 구독을 정리해 남아 있는 쪽의 기어 콜백까지 끊긴다(에뮬레이터에서 확인).
+     * 그래서 연결은 참조 수로, 기어 리스너는 SDK 에 한 번만 등록하고 안에서 나눠 준다.
+     */
+    private object Shared {
+        private var vehicle: Vehicle? = null
+        private var refs = 0
+        private var gear: PleosGear? = null
+        private val gearSubs = mutableListOf<(VehicleGear?) -> Unit>()
+        private val sdkGearListener = object : GearSelectionListener {
+            override fun onSelected(value: VehicleGear?) {
+                synchronized(this@Shared) { gearSubs.toList() }.forEach { it(value) }
+            }
+
+            override fun onFailed(e: Exception) {
+                Log.w(TAG, "기어 구독 실패", e)
+                synchronized(this@Shared) { gearSubs.toList() }.forEach { it(null) }
+            }
+        }
+
+        @Synchronized
+        fun acquire(context: Context): Vehicle {
+            val v = vehicle ?: Vehicle(context).also { it.initialize(); vehicle = it }
+            refs++
+            return v
+        }
+
+        @Synchronized
+        fun release(v: Vehicle) {
+            if (v !== vehicle || --refs > 0) return
+            runCatching { gear?.unregisterGearSelection(sdkGearListener) }
+            gear = null
+            gearSubs.clear()
+            runCatching { v.release() }
+            vehicle = null
+        }
+
+        @Synchronized
+        fun subscribeGear(v: Vehicle, sub: (VehicleGear?) -> Unit) {
+            gearSubs += sub
+            if (gear == null) gear = v.getGear().also { it.registerGearSelection(sdkGearListener) }
+        }
+
+        @Synchronized
+        fun unsubscribeGear(sub: (VehicleGear?) -> Unit) {
+            gearSubs -= sub
+        }
     }
 
     companion object {
