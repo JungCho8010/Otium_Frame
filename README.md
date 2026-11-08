@@ -6,6 +6,15 @@
 Pleos Connect(Android Automotive OS) 차량에서 **기어가 P일 때 내 사진·영상으로 화면을 채우는** 개인화 디스플레이 앱 프로토타입입니다.
 2026 현대자동차그룹 차량용 앱 개발 공모전(Pleos Playground 공개 API 활용) 출품용입니다.
 
+## 제출 정보 (심사용)
+
+| 항목 | 내용 |
+|---|---|
+| APK 위치 | [`apk/정재철_OtiumFrame_release.apk`](apk/) — `pleos` flavor, release 서명본 |
+| 실행 방법 | Pleos 에뮬레이터 부팅 → `adb install -r apk/정재철_OtiumFrame_release.apk` → 런처에서 **Otium Frame** 실행 → Virtual Console 에서 기어를 **P** 로 두면 재생, P 를 벗어나면 화면이 닫힘 (자세한 조작은 아래 'Pleos 에뮬레이터에서 확인하기') |
+| 테스트 환경 | Pleos Connect v2.1.0 에뮬레이터 (Android 14 / API 34, AAOS), Pleos Vehicle SDK 2.3.2, Windows 10 + Android Studio, JDK 17 |
+| 빌드 재현 | `JAVA_HOME=<jdk17> ./gradlew assemblePleosRelease` (서명 열쇠는 저장소에 포함하지 않음 → 미서명 빌드가 되며 심사용 APK 는 위 파일 사용) |
+
 ## 동작 요약
 
 | 차량 상태 | 화면 |
@@ -69,6 +78,7 @@ bash tools/phone-demo.sh --stop   # 덮어쓰기 해제
 ```bash
 ./gradlew assembleMockDebug testMockDebugUnitTest      # → app/build/outputs/apk/mock/debug/app-mock-debug.apk
 ./gradlew assemblePleosDebug                           # → app/build/outputs/apk/pleos/debug/app-pleos-debug.apk
+./gradlew assemblePleosRelease                         # → app/build/outputs/apk/pleos/release/ (루트에 keystore.properties 가 있으면 서명)
 ```
 
 Google Maven 이 막힌 환경에서는 `tools/build-offline.sh` 로 mock 디버그 APK 를 만들 수 있습니다(aapt2 · kotlinc · dx · apksigner).
