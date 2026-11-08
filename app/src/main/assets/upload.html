@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Otium Frame 사진 올리기</title>
+<style>
+body{font-family:sans-serif;background:#0e1116;color:#f4f1ea;margin:0;padding:20px}
+h1{font-size:20px;margin:0 0 8px}h2{font-size:17px;margin:28px 0 6px;color:#d9b26f}p{color:#b8b4ab;margin:0 0 12px;font-size:14px}
+label.pick{display:block;padding:22px 16px;border:2px dashed #d9b26f;border-radius:14px;text-align:center;font-size:17px;margin:12px 0}
+input[type=file]{display:none}ul{list-style:none;padding:0;margin:0}li{padding:8px 0;border-bottom:1px solid #22272f}.ok{color:#9fe3c9}.err{color:#f29b9b}
+video,img.preview{width:100%;max-height:50vh;background:#000;border-radius:10px;display:block}
+.row{display:flex;align-items:center;gap:10px;margin:10px 0;font-size:15px}.row input[type=range]{flex:1}
+button{background:#d9b26f;color:#0e1116;border:0;border-radius:10px;padding:14px 18px;font-size:16px;font-weight:600;width:100%;margin-top:8px}
+button:disabled{opacity:.4}.hide{display:none}.status{font-size:14px;color:#b8b4ab;margin-top:8px}
+.thumbs{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.thumbs img{width:64px;height:64px;object-fit:cover;border-radius:8px}
+progress{width:100%;height:10px;accent-color:#d9b26f;display:block;margin-top:6px}
+input[type=number]{width:70px;font-size:16px;padding:6px;border-radius:8px;border:1px solid #444;background:#1a1f27;color:#f4f1ea}
+</style></head>
+<body>
+<h1>Otium Frame 사진 올리기</h1><p>차량 화면에서 재생할 사진(JPG·PNG·WEBP·BMP·GIF·HEIC)과 영상(MP4·MOV)을 고르세요. 고르면 바로 차량에 저장돼요.</p>
+<label class="pick">사진·영상 선택<input id="f" type="file" multiple accept="image/jpeg,image/png,image/webp,image/bmp,image/gif,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.bmp,.gif,.heic,.heif,video/*"></label>
+<ul id="list"></ul>
+
+<h2>영상 구간을 GIF로</h2><p>영상에서 원하는 구간(최대 8초)을 잘라 GIF로 만들어요.</p>
+<label class="pick">영상 선택<input id="vf" type="file" accept="video/*"></label>
+<div id="vbox" class="hide">
+  <video id="v" playsinline muted controls preload="auto"></video>
+  <div class="row">시작 <input id="s" type="range" min="0" max="1" step="0.1" value="0"><span id="sv">0.0초</span></div>
+  <div class="row">끝 <input id="e" type="range" min="0" max="1" step="0.1" value="1"><span id="ev">0.0초</span></div>
+  <button id="vgo">GIF 만들기</button>
+  <div id="vst" class="status"></div>
+  <progress id="vbar" class="hide" max="1" value="0"></progress>
+</div>
+
+<h2>사진 여러 장을 GIF로</h2><p>고른 순서대로 넘어가는 GIF를 만들어요.</p>
+<label class="pick">사진 여러 장 선택<input id="pf" type="file" multiple accept="image/jpeg,image/png,image/webp,image/bmp,image/gif,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.bmp,.gif,.heic,.heif"></label>
+<div id="pbox" class="hide">
+  <div id="thumbs" class="thumbs"></div>
+  <div class="row">한 장당 <input id="psec" type="number" min="0.2" max="5" step="0.1" value="1">초</div>
+  <button id="pgo">GIF 만들기</button>
+  <div id="pst" class="status"></div>
+</div>
+
+<div id="result" class="hide">
+  <h2>만든 GIF</h2>
+  <img id="rimg" class="preview">
+  <div id="rinfo" class="status"></div>
+  <button id="rsend">차량에 올리기</button>
+  <progress id="rbar" class="hide" max="1" value="0"></progress>
+  <div id="rst" class="status"></div>
+</div>
+
+<script id="enc">
+// GIF 인코더(외부 라이브러리 없음). 프레임마다 미디언컷 256색 팔레트 + 플로이드-스타인버그 디더링, LZW 압축.
+var MAX_W = 640, FPS = 6, MAX_SEC = 8; // 가로 640 고정(세로 영상은 더 큼), 6fps 로 용량 절감
+
+function Buf() { this.a = new Uint8Array(1 << 20); this.n = 0; }
+Buf.prototype.push = function (b) {
+  if (this.n === this.a.length) { var t = new Uint8Array(this.a.length * 2); t.set(this.a); this.a = t; }
+  this.a[this.n++] = b;
+};
+Buf.prototype.bytes = function () { return this.a.subarray(0, this.n); };
+
+// 5비트/채널 히스토그램(32768칸) 위에서 미디언컷. 반환: {pal: Uint8Array(768), idx: Uint8Array(w*h)}
+function quantize(img) {
+  var d = img.data, n = img.width * img.height, hist = new Int32Array(32768), i, p;
+  for (i = 0; i < n; i++) { p = i * 4; hist[((d[p] >> 3) << 10) | ((d[p + 1] >> 3) << 5) | (d[p + 2] >> 3)]++; }
+  function each(b, fn) { // b = [r0,r1,g0,g1,b0,b1] 닫힌구간
+    for (var r = b[0]; r <= b[1]; r++) for (var g = b[2]; g <= b[3]; g++) for (var bl = b[4]; bl <= b[5]; bl++) {
+      var c = hist[(r << 10) | (g << 5) | bl]; if (c) fn(r, g, bl, c);
+    }
+  }
+  function shrink(b) {
+    var m = [32, -1, 32, -1, 32, -1], total = 0;
+    each(b, function (r, g, bl, c) {
+      total += c; if (r < m[0]) m[0] = r; if (r > m[1]) m[1] = r; if (g < m[2]) m[2] = g; if (g > m[3]) m[3] = g; if (bl < m[4]) m[4] = bl; if (bl > m[5]) m[5] = bl;
+    });
+    m.total = total; return m;
+  }
+  var boxes = [shrink([0, 31, 0, 31, 0, 31])];
+  while (boxes.length < 256) {
+    var bi = -1, best = 0, j, b;
+    for (j = 0; j < boxes.length; j++) {
+      b = boxes[j]; if (!b.total) continue;
+      var r = Math.max(b[1] - b[0], b[3] - b[2], b[5] - b[4]); if (r > best) { best = r; bi = j; }
+    }
+    if (bi < 0) break;
+    b = boxes[bi];
+    var ax = (b[1] - b[0] >= b[3] - b[2] && b[1] - b[0] >= b[5] - b[4]) ? 0 : (b[3] - b[2] >= b[5] - b[4] ? 1 : 2);
+    var lo = b[ax * 2], hi = b[ax * 2 + 1], acc = 0, cut = hi - 1, v;
+    for (v = lo; v < hi; v++) {
+      var s = b.slice(); s[ax * 2] = v; s[ax * 2 + 1] = v;
+      each(s, function (r, g, bl, c) { acc += c; });
+      if (acc * 2 >= b.total) { cut = v; break; }
+    }
+    var l = b.slice(), h = b.slice(); l[ax * 2 + 1] = cut; h[ax * 2] = cut + 1;
+    boxes.splice(bi, 1, shrink(l), shrink(h));
+  }
+  var pal = new Uint8Array(768), k = 0;
+  boxes.forEach(function (b) {
+    if (!b.total) return;
+    var sr = 0, sg = 0, sb = 0;
+    each(b, function (r, g, bl, c) { sr += (r * 8 + 4) * c; sg += (g * 8 + 4) * c; sb += (bl * 8 + 4) * c; });
+    pal[k * 3] = sr / b.total; pal[k * 3 + 1] = sg / b.total; pal[k * 3 + 2] = sb / b.total; k++;
+  });
+  var count = k, lut = new Int16Array(32768).fill(-1);
+  function nearest(r, g, bl) {
+    var key = ((r >> 3) << 10) | ((g >> 3) << 5) | (bl >> 3), q = lut[key];
+    if (q >= 0) return q;
+    var bd = 1e9, cr = (r & ~7) + 4, cg = (g & ~7) + 4, cb = (bl & ~7) + 4;
+    for (var m = 0; m < count; m++) {
+      var dr = cr - pal[m * 3], dg = cg - pal[m * 3 + 1], db = cb - pal[m * 3 + 2], dist = dr * dr + dg * dg + db * db;
+      if (dist < bd) { bd = dist; q = m; }
+    }
+    lut[key] = q; return q;
+  }
+  // 플로이드-스타인버그: 오차를 원본 버퍼(Uint8Clamped)에 바로 퍼뜨린다(클램프로 넘침 처리).
+  var idx = new Uint8Array(n), w = img.width, x, y, q, er, eg, eb;
+  for (y = 0; y < img.height; y++) for (x = 0; x < w; x++) {
+    p = (y * w + x) * 4; q = nearest(d[p], d[p + 1], d[p + 2]); idx[y * w + x] = q;
+    er = d[p] - pal[q * 3]; eg = d[p + 1] - pal[q * 3 + 1]; eb = d[p + 2] - pal[q * 3 + 2];
+    if (x + 1 < w) { d[p + 4] += er * 7 / 16; d[p + 5] += eg * 7 / 16; d[p + 6] += eb * 7 / 16; }
+    if (y + 1 < img.height) {
+      var q2 = p + w * 4;
+      if (x > 0) { d[q2 - 4] += er * 3 / 16; d[q2 - 3] += eg * 3 / 16; d[q2 - 2] += eb * 3 / 16; }
+      d[q2] += er * 5 / 16; d[q2 + 1] += eg * 5 / 16; d[q2 + 2] += eb * 5 / 16;
+      if (x + 1 < w) { d[q2 + 4] += er / 16; d[q2 + 5] += eg / 16; d[q2 + 6] += eb / 16; }
+    }
+  }
+  return { pal: pal, idx: idx };
+}
+
+// GIF 변형 LZW(최소 코드 8비트). 255바이트 서브블록으로 out 에 쓴다.
+function lzw(idx, out) {
+  out.push(8);
+  var size = 9, next = 258, dict = new Map(), buf = 0, nbits = 0, block = new Uint8Array(255), bn = 0;
+  function flush() { out.push(bn); for (var i = 0; i < bn; i++) out.push(block[i]); bn = 0; }
+  function emit(code) {
+    buf |= code << nbits; nbits += size;
+    while (nbits >= 8) { block[bn++] = buf & 255; buf >>>= 8; nbits -= 8; if (bn === 255) flush(); }
+  }
+  emit(256);
+  var prefix = idx[0];
+  for (var i = 1; i < idx.length; i++) {
+    var k = idx[i], key = (prefix << 8) | k, c = dict.get(key);
+    if (c !== undefined) { prefix = c; continue; }
+    emit(prefix);
+    if (next < 4096) { dict.set(key, next++); if (next > (1 << size) && size < 12) size++; }
+    else { emit(256); dict.clear(); next = 258; size = 9; }
+    prefix = k;
+  }
+  emit(prefix); emit(257);
+  if (nbits > 0) { block[bn++] = buf & 255; if (bn === 255) flush(); }
+  if (bn) flush();
+  out.push(0);
+}
+
+// frames: [{pal, idx}], delays: 1/100초 단위 배열. 무한 반복 GIF89a 바이트를 돌려준다.
+function gif(w, h, frames, delays) {
+  var out = new Buf();
+  function str(s) { for (var i = 0; i < s.length; i++) out.push(s.charCodeAt(i)); }
+  function u16(v) { out.push(v & 255); out.push((v >> 8) & 255); }
+  str('GIF89a'); u16(w); u16(h); out.push(0x70); out.push(0); out.push(0);
+  out.push(0x21); out.push(0xFF); out.push(11); str('NETSCAPE2.0'); out.push(3); out.push(1); u16(0); out.push(0);
+  frames.forEach(function (f, i) {
+    out.push(0x21); out.push(0xF9); out.push(4); out.push(0); u16(delays[i]); out.push(0); out.push(0);
+    out.push(0x2C); u16(0); u16(0); u16(w); u16(h); out.push(0x87);
+    for (var j = 0; j < 768; j++) out.push(f.pal[j]);
+    lzw(f.idx, out);
+  });
+  out.push(0x3B);
+  return out.bytes();
+}
+</script>
+<script>
+var base = location.pathname.replace(/\/+$/, '');
+function $(id) { return document.getElementById(id); }
+// XMLHttpRequest 를 쓰는 이유: fetch 는 올리기 진행률을 못 준다. bar 는 <progress>(0~1).
+function upload(blob, name, bar) {
+  return new Promise(function (res) {
+    var x = new XMLHttpRequest(); x.open('POST', base + '/upload');
+    x.setRequestHeader('Content-Type', blob.type || 'application/octet-stream'); x.setRequestHeader('X-Name', encodeURIComponent(name));
+    if (bar) x.upload.onprogress = function (ev) { if (ev.lengthComputable) bar.value = ev.loaded / ev.total; };
+    x.onload = function () { res({ ok: x.status === 200, text: x.responseText }); };
+    x.onerror = x.ontimeout = function () { res(null); };
+    x.send(blob);
+  });
+}
+function tick() { return new Promise(function (r) { setTimeout(r, 0); }); }
+
+// 1) 그냥 올리기
+var f = $('f'), list = $('list');
+f.onchange = async function () {
+  for (var k = 0; k < f.files.length; k++) {
+    var file = f.files[k], li = document.createElement('li'); li.textContent = file.name + ' … 올리는 중'; list.appendChild(li);
+    var bar = document.createElement('progress'); bar.max = 1; bar.value = 0; li.appendChild(bar);
+    var r = await upload(file, file.name, bar);
+    li.textContent = file.name + (r ? (r.ok ? ' ✓ 올렸어요' : ' ✗ ' + r.text) : ' ✗ 연결 실패'); li.className = r && r.ok ? 'ok' : 'err';
+  }
+  f.value = '';
+};
+
+// 만든 GIF 미리보기 + 올리기
+var made = null;
+function showResult(bytes, name) {
+  made = { blob: new Blob([bytes], { type: 'image/gif' }), name: name };
+  $('rimg').src = URL.createObjectURL(made.blob);
+  $('rinfo').textContent = name + ' · ' + (made.blob.size / 1048576).toFixed(1) + 'MB';
+  $('rst').textContent = ''; $('result').classList.remove('hide'); $('result').scrollIntoView({ behavior: 'smooth' });
+}
+$('rsend').onclick = async function () {
+  if (!made) return;
+  $('rst').textContent = '올리는 중…'; $('rsend').disabled = true; $('rbar').value = 0; $('rbar').classList.remove('hide');
+  var r = await upload(made.blob, made.name, $('rbar'));
+  $('rst').textContent = r ? (r.ok ? '✓ 차량에 올렸어요' : '✗ ' + r.text) : '✗ 연결 실패'; $('rst').className = r && r.ok ? 'status ok' : 'status err';
+  $('rbar').classList.add('hide'); $('rsend').disabled = false;
+};
+function fit(sw, sh) { var w = Math.min(MAX_W, sw), h = Math.round(sh * w / sw); return [w & ~1, h & ~1]; }
+function stem(name) { return name.replace(/\.[^.]+$/, ''); }
+
+// 2) 영상 구간 → GIF
+var vf = $('vf'), v = $('v'), s = $('s'), e = $('e');
+function fmt(x) { return (+x).toFixed(1) + '초'; }
+function syncLabels() { $('sv').textContent = fmt(s.value); $('ev').textContent = fmt(e.value); }
+// 파일을 FileReader 로 읽으면 진행률이 나온다. 너무 큰 파일은 메모리를 아끼려고 바로 넘기고 막대만 움직인다(진행률 없음).
+var READ_LIMIT = 500 * 1048576;
+vf.onchange = async function () {
+  var file = vf.files[0]; if (!file) return;
+  var bar = $('vbar'), mb = (file.size / 1048576).toFixed(0) + 'MB'; bar.value = 0; bar.classList.remove('hide'); $('vbox').classList.remove('hide');
+  $('vgo').disabled = true; $('vst').textContent = '영상 읽는 중… 0% (' + mb + ')'; $('vst').scrollIntoView({ block: 'center' });
+  var src = file;
+  if (file.size <= READ_LIMIT) {
+    src = await new Promise(function (res) {
+      var r = new FileReader();
+      r.onprogress = function (ev) { if (ev.lengthComputable) { bar.value = ev.loaded / ev.total; $('vst').textContent = '영상 읽는 중… ' + Math.round(bar.value * 100) + '% (' + mb + ')'; } };
+      r.onload = function () { bar.value = 1; res(new Blob([r.result], { type: file.type })); };
+      r.onerror = function () { res(file); };
+      r.readAsArrayBuffer(file);
+    });
+  } else bar.removeAttribute('value');
+  $('vst').textContent = '영상 정보 확인 중… (길이·해상도 읽는 중)';
+  v.src = URL.createObjectURL(src); v.load();
+};
+v.onloadedmetadata = function () {
+  var d = Math.floor(v.duration * 10) / 10;
+  s.max = e.max = d; s.value = 0; e.value = Math.min(d, MAX_SEC); syncLabels();
+  $('vgo').disabled = false; $('vst').textContent = '구간을 정하고 GIF 만들기를 누르세요'; $('vbar').classList.add('hide');
+};
+v.onerror = function () { $('vst').textContent = '이 영상은 폰 브라우저가 읽지 못해요 (다른 형식으로 저장해 보세요)'; $('vbar').classList.add('hide'); };
+s.oninput = function () { if (+e.value - +s.value > MAX_SEC) e.value = +s.value + MAX_SEC; if (+e.value <= +s.value) e.value = Math.min(+s.max, +s.value + 0.5); v.currentTime = +s.value; syncLabels(); };
+e.oninput = function () { if (+e.value - +s.value > MAX_SEC) s.value = +e.value - MAX_SEC; if (+e.value <= +s.value) s.value = Math.max(0, +e.value - 0.5); v.currentTime = +e.value; syncLabels(); };
+function seek(t) {
+  return new Promise(function (res) {
+    var done = false, fin = function () { if (!done) { done = true; res(); } };
+    if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(fin);
+    v.onseeked = function () { setTimeout(fin, 120); };
+    if (Math.abs(v.currentTime - t) < 0.01) { setTimeout(fin, 50); return; }
+    v.currentTime = t;
+  });
+}
+$('vgo').onclick = async function () {
+  var from = +s.value, to = +e.value, st = $('vst');
+  if (!v.videoWidth) { st.textContent = '영상 읽는 중… 잠시 뒤 다시 눌러 주세요'; return; }
+  $('vgo').disabled = true; v.pause();
+  var wh = fit(v.videoWidth, v.videoHeight), c = document.createElement('canvas'); c.width = wh[0]; c.height = wh[1];
+  var ctx = c.getContext('2d', { willReadFrequently: true }), frames = [], total = Math.max(1, Math.round((to - from) * FPS));
+  try {
+    for (var i = 0; i < total; i++) {
+      await seek(from + i / FPS);
+      ctx.drawImage(v, 0, 0, c.width, c.height);
+      frames.push(quantize(ctx.getImageData(0, 0, c.width, c.height)));
+      st.textContent = '프레임 ' + (i + 1) + ' / ' + total; await tick();
+    }
+    st.textContent = 'GIF 파일 만드는 중…'; await tick();
+    var delays = frames.map(function (_, i) { return Math.round((i + 1) * 100 / FPS) - Math.round(i * 100 / FPS); }); // 1/100초 단위 누적 반올림(6fps = 17,17,16…)
+    showResult(gif(c.width, c.height, frames, delays), stem(vf.files[0].name) + '_' + from.toFixed(1) + '-' + to.toFixed(1) + '.gif');
+    st.textContent = '완성! 아래에서 확인하고 올리세요';
+  } catch (err) { st.textContent = '실패: ' + err; }
+  $('vgo').disabled = false;
+};
+
+// 3) 사진 여러 장 → GIF
+var pf = $('pf'), photos = [];
+pf.onchange = function () {
+  photos = Array.prototype.slice.call(pf.files); var t = $('thumbs'); t.innerHTML = '';
+  photos.forEach(function (file) { var im = document.createElement('img'); im.src = URL.createObjectURL(file); t.appendChild(im); });
+  $('pbox').classList.toggle('hide', photos.length < 2); $('pst').textContent = photos.length < 2 ? '' : photos.length + '장';
+  if (photos.length === 1) $('pst').textContent = '두 장 이상 골라 주세요';
+};
+function loadImage(file) {
+  return new Promise(function (res, rej) { var im = new Image(); im.onload = function () { res(im); }; im.onerror = rej; im.src = URL.createObjectURL(file); });
+}
+$('pgo').onclick = async function () {
+  var st = $('pst'), sec = Math.min(5, Math.max(0.2, +$('psec').value || 1));
+  $('pgo').disabled = true;
+  try {
+    var first = await loadImage(photos[0]), wh = fit(first.naturalWidth, first.naturalHeight), c = document.createElement('canvas');
+    c.width = wh[0]; c.height = wh[1];
+    var ctx = c.getContext('2d', { willReadFrequently: true }), frames = [];
+    for (var i = 0; i < photos.length; i++) {
+      var im = i ? await loadImage(photos[i]) : first, sc = Math.max(c.width / im.naturalWidth, c.height / im.naturalHeight);
+      var dw = im.naturalWidth * sc, dh = im.naturalHeight * sc; // 꽉 채우기(가운데 잘라내기)
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(im, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh);
+      frames.push(quantize(ctx.getImageData(0, 0, c.width, c.height)));
+      st.textContent = '사진 ' + (i + 1) + ' / ' + photos.length; await tick();
+    }
+    var delays = frames.map(function () { return Math.round(sec * 100); });
+    showResult(gif(c.width, c.height, frames, delays), stem(photos[0].name) + '_' + photos.length + '장.gif');
+    st.textContent = '완성! 아래에서 확인하고 올리세요';
+  } catch (err) { st.textContent = '실패: ' + err; }
+  $('pgo').disabled = false;
+};
+</script></body></html>

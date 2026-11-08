@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="otium_ink">#FF0E1116</color>
+    <color name="otium_panel">#CC1A1F27</color>
+    <color name="otium_text">#FFF4F1EA</color>
+    <color name="otium_sub">#B3F4F1EA</color>
+    <color name="otium_accent">#FFD9B26F</color>
+</resources>

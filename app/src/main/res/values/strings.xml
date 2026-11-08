@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Otium Frame</string>
+    <string name="settings">설정</string>
+    <string name="demo">DEMO</string>
+    <string name="idle_hint">기어를 P에 두면 사진·영상이 재생돼요</string>
+    <string name="dismiss_hint">화면을 두 번 탭하면 닫혀요</string>
+    <string name="auto_switch">화면 자동 전환</string>
+    <string name="status_parked">주차 중</string>
+    <string name="status_charging">충전 중 · %1$d%%</string>
+    <string name="status_charging_unknown">충전 중</string>
+    <string name="ambient_synced">앰비언트 라이트 동기화</string>
+    <string name="ambient_fallback">앰비언트 미지원 · 테두리로 표시</string>
+    <string name="settings_title">Otium Frame 설정</string>
+    <string name="settings_media_count">재생할 사진·영상 %1$d개 선택 · 보관 %2$d개 (선택이 없으면 기본 샘플이 재생돼요)</string>
+    <string name="settings_select_media">사진·영상 선택</string>
+    <string name="settings_clear_media">모두 삭제</string>
+    <string name="settings_import_phone">폰에서 가져오기 (QR)</string>
+    <string name="settings_back">돌아가기</string>
+    <string name="select_title">사진·영상 선택</string>
+    <string name="select_hint">재생할 항목을 눌러 체크하세요. 체크한 것만 슬라이드쇼에 나와요.</string>
+    <string name="select_count">%1$d / %2$d 선택</string>
+    <string name="select_all">전체 선택</string>
+    <string name="select_none">전체 해제</string>
+    <string name="select_delete">선택 삭제</string>
+    <string name="select_empty">아직 올린 사진이 없어요. 설정의 \'폰에서 가져오기 (QR)\' 로 올려 보세요.</string>
+    <string name="select_badge_video">영상</string>
+    <string name="select_badge_gif">GIF</string>
+    <string name="upload_title">폰에서 사진 가져오기</string>
+    <string name="upload_steps">1. 스마트폰을 차량과 같은 Wi-Fi에 연결하세요\n2. 카메라로 QR 코드를 찍으세요\n3. 열린 페이지에서 사진·영상을 고르면 바로 차량에 저장돼요</string>
+    <string name="upload_received">받은 파일 %1$d개</string>
+    <string name="upload_close">완료</string>
+    <string name="upload_no_wifi">차량 Wi-Fi 주소를 찾지 못했어요. Wi-Fi 연결을 확인하세요.</string>
+    <string name="settings_interval">슬라이드 간격: %1$d초</string>
+    <string name="settings_ambient">사진 색에 맞춰 앰비언트 라이트 바꾸기</string>
+    <string name="settings_auto_launch">화면 자동 전환 (P기어가 되면 자동으로 열기)</string>
+    <string name="settings_clock">시계 표시</string>
+    <string name="settings_vehicle_source">차량 신호: %1$s</string>
+    <string name="notification_channel">P기어 감지</string>
+    <string name="notification_text">P기어가 되면 Otium Frame 으로 화면을 바꿔요</string>
+    <string name="demo_gear_p">P</string>
+    <string name="demo_gear_n">N</string>
+    <string name="demo_gear_d">D</string>
+    <string name="demo_gear_r">R</string>
+</resources>

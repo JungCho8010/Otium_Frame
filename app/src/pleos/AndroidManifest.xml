@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Pleos Vehicle SDK: 실제로 쓰는 도메인 권한만 선언한다. -->
+    <uses-permission android:name="pleos.car.permission.CAR_DRIVE" />           <!-- Gear: 기어 P/R/N/D -->
+    <uses-permission android:name="pleos.car.permission.CAR_ENERGY" />          <!-- EvBattery: 충전 상태, 배터리 % -->
+    <uses-permission android:name="pleos.car.permission.CAR_LIGHTS" />          <!-- Light: 앰비언트 지원 영역 조회 -->
+    <uses-permission android:name="pleos.car.permission.CONTROL_CAR_LIGHTS" />  <!-- Light: 앰비언트 색 설정 -->
+
+    <!-- EXPERIMENT: 백그라운드에서 P 감지 시 화면을 열기 위한 '다른 앱 위에 표시' 권한 (BAL 예외 테스트) -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- AAOS 표준: 주행 제한(CarUxRestrictionsManager)은 권한이 필요 없다. -->
+    <application>
+        <uses-library android:name="android.car" android:required="false" />
+    </application>
+</manifest>

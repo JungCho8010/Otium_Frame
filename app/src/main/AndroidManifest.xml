@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature android:name="android.hardware.type.automotive" android:required="false" />
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 폰에서 사진 가져오기: 차량 내부 Wi-Fi 에서만 도는 업로드 서버(QR 화면이 떠 있는 동안만). 외부 전송 없음. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.OtiumFrame">
+
+        <activity
+            android:name=".ui.FrameActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- distractionOptimized 를 선언하지 않는다: P단에서만 쓰는 화면이라 주행 중에는 앱이 스스로 닫히고,
+                 혹시 남아 있더라도 AAOS 가 시스템 차단 화면으로 가린다. -->
+        </activity>
+
+        <activity
+            android:name=".ui.SettingsActivity"
+            android:exported="false"
+            android:label="@string/settings_title"
+            android:theme="@style/Theme.OtiumFrame.Settings" />
+
+        <activity
+            android:name=".ui.SelectActivity"
+            android:exported="false"
+            android:label="@string/select_title"
+            android:theme="@style/Theme.OtiumFrame.Settings" />
+
+        <activity
+            android:name=".ui.UploadActivity"
+            android:exported="false"
+            android:label="@string/upload_title"
+            android:theme="@style/Theme.OtiumFrame.Settings" />
+
+        <service
+            android:name=".service.ParkWatchService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="화면 자동 전환을 켠 경우에만 P기어를 감지해 개인화 디스플레이로 전환" />
+        </service>
+
+        <receiver
+            android:name=".service.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
